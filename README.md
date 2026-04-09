@@ -1,4 +1,5 @@
-# CV_4
+# Image-Formation-with-Python
+
 
 간단한 카메라 캘리브레이션 및 왜곡 보정(OpenCV) 실습 폴더입니다.
 
