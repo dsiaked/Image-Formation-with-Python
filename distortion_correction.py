@@ -1,4 +1,5 @@
 import argparse
+import glob
 import os
 
 import cv2 as cv
@@ -54,6 +55,60 @@ def process_image(input_path, output_path, K, dist_coeff, show_window=True):
         cv.destroyAllWindows()
 
 
+def process_images(input_path_or_pattern, output_path, K, dist_coeff, show_window=True):
+    if os.path.isdir(input_path_or_pattern):
+        pattern = os.path.join(input_path_or_pattern, "*.jpg")
+    else:
+        pattern = input_path_or_pattern
+
+    input_files = sorted(glob.glob(pattern))
+    if not input_files:
+        raise FileNotFoundError(f"입력 이미지가 없습니다: {input_path_or_pattern}")
+
+    output_ext = os.path.splitext(output_path)[1]
+    output_is_dir = (
+        os.path.isdir(output_path)
+        or output_path.endswith(("/", "\\"))
+        or output_ext == ""
+    )
+    if output_is_dir:
+        os.makedirs(output_path, exist_ok=True)
+
+    map_cache = {}
+    for idx, input_file in enumerate(input_files):
+        img = cv.imread(input_file)
+        if img is None:
+            print(f"경고: 이미지를 읽을 수 없어 건너뜁니다: {input_file}")
+            continue
+
+        rectified = undistort_frame(img, K, dist_coeff, map_cache)
+        compare = stack_compare_view(img, rectified)
+
+        if output_is_dir:
+            stem, ext = os.path.splitext(os.path.basename(input_file))
+            output_file = os.path.join(output_path, f"{stem}_distortion_demo{ext}")
+        elif len(input_files) == 1:
+            output_file = output_path
+        else:
+            out_dir = os.path.dirname(output_path) or "."
+            out_name = os.path.basename(output_path)
+            stem, ext = os.path.splitext(out_name)
+            ext = ext or ".jpg"
+            output_file = os.path.join(out_dir, f"{stem}_{idx + 1:02d}{ext}")
+
+        cv.imwrite(output_file, compare)
+        print(f"결과 이미지 저장: {output_file}")
+
+        if show_window:
+            cv.imshow("Lens Distortion Correction (Image)", compare)
+            key = cv.waitKey(400)
+            if key == 27:
+                print("ESC 입력으로 미리보기를 종료합니다.")
+                break
+
+    cv.destroyAllWindows()
+
+
 def process_video(input_path, output_path, K, dist_coeff, show_window=True):
     video = cv.VideoCapture(input_path)
     if not video.isOpened():
@@ -96,8 +151,16 @@ def process_video(input_path, output_path, K, dist_coeff, show_window=True):
 def parse_args():
     parser = argparse.ArgumentParser(description="Lens distortion correction using saved calibration")
     parser.add_argument("--mode", choices=["image", "video"], default="image", help="입력 타입")
-    parser.add_argument("--input", default="data/chessboard/chess_01.jpg", help="입력 이미지 또는 동영상 경로")
-    parser.add_argument("--output", default="distortion_demo.jpg", help="출력 경로")
+    parser.add_argument(
+        "--input",
+        default="data/chessboard/chess_*.jpg",
+        help="입력 이미지/패턴/폴더 또는 동영상 경로",
+    )
+    parser.add_argument(
+        "--output",
+        default="distortion_results",
+        help="출력 경로(이미지 배치 시 폴더 권장)",
+    )
     parser.add_argument("--calib", default="calibration_result.npz", help="캘리브레이션 결과 파일")
     parser.add_argument("--no_show", action="store_true", help="미리보기 창 비활성화")
     return parser.parse_args()
@@ -108,6 +171,6 @@ if __name__ == "__main__":
     K, dist_coeff = load_calibration(args.calib)
 
     if args.mode == "image":
-        process_image(args.input, args.output, K, dist_coeff, show_window=not args.no_show)
+        process_images(args.input, args.output, K, dist_coeff, show_window=not args.no_show)
     else:
         process_video(args.input, args.output, K, dist_coeff, show_window=not args.no_show)
